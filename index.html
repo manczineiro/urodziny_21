@@ -1,0 +1,1248 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Projekt 21.0 — Szybki Przegląd i Regeneracja</title>
+    <style>
+        :root {
+            --dark-bg: #070b14;
+            --dark-card: rgba(15, 23, 42, 0.85);
+            --neon-blue: #00f2fe;
+            --neon-red: #ff2a54;
+            --beige-bg: #f2e8df;
+            --beige-light: #faf6f2;
+            --beige-border: #e2d4c8;
+            --text-dark: #2c221e;
+            --text-muted: #7a685d;
+            --gold-accent: #c89b57;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        html {
+            scroll-behavior: smooth;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background-color: var(--dark-bg);
+            color: #f8fafc;
+            min-height: 100vh;
+            overflow-x: hidden;
+            transition: background-color 1s ease, color 1s ease;
+        }
+
+        /* Tło cząsteczkowe */
+        #bgCanvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            z-index: 0;
+            pointer-events: none;
+        }
+
+        /* ================= ETAP 1: SKANER ================= */
+        #scannerStage {
+            position: relative;
+            z-index: 2;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+            transition: opacity 0.8s ease, transform 0.8s ease;
+        }
+
+        .hud-box {
+            background: var(--dark-card);
+            backdrop-filter: blur(16px);
+            border: 1px solid rgba(0, 242, 254, 0.25);
+            border-radius: 24px;
+            padding: 28px;
+            width: 100%;
+            max-width: 900px;
+            display: grid;
+            grid-template-columns: 1fr 1.2fr;
+            gap: 28px;
+            box-shadow: 0 0 60px rgba(0, 242, 254, 0.1);
+            position: relative;
+            overflow: hidden;
+        }
+
+        @media (max-width: 768px) {
+            .hud-box {
+                grid-template-columns: 1fr;
+                padding: 20px;
+            }
+        }
+
+        /* Lewa kolumna: Sylwetka i Laser */
+        .body-scan-panel {
+            background: rgba(5, 9, 18, 0.9);
+            border: 1px solid rgba(0, 242, 254, 0.2);
+            border-radius: 18px;
+            padding: 20px;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 340px;
+            overflow: hidden;
+        }
+
+        .grid-overlay {
+            position: absolute;
+            inset: 0;
+            background-image: 
+                linear-gradient(rgba(0, 242, 254, 0.05) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(0, 242, 254, 0.05) 1px, transparent 1px);
+            background-size: 20px 20px;
+            pointer-events: none;
+        }
+
+        .silhouette-svg {
+            width: 160px;
+            height: 290px;
+            stroke: var(--neon-blue);
+            stroke-width: 2;
+            fill: rgba(0, 242, 254, 0.04);
+            filter: drop-shadow(0 0 8px rgba(0, 242, 254, 0.4));
+            transition: stroke 0.3s, filter 0.3s;
+        }
+
+        .hotspot {
+            fill: var(--neon-red);
+            opacity: 0.2;
+            transform-origin: center;
+            transition: opacity 0.3s;
+        }
+
+        .hotspot.active {
+            opacity: 1;
+            animation: pingHotspot 1s infinite alternate;
+        }
+
+        @keyframes pingHotspot {
+            0% { r: 6px; filter: drop-shadow(0 0 4px var(--neon-red)); }
+            100% { r: 11px; filter: drop-shadow(0 0 15px var(--neon-red)); }
+        }
+
+        .laser-line {
+            position: absolute;
+            left: 0;
+            width: 100%;
+            height: 3px;
+            background: var(--neon-blue);
+            box-shadow: 0 0 18px 4px var(--neon-blue);
+            top: 10%;
+            opacity: 0;
+            transition: opacity 0.2s;
+            pointer-events: none;
+        }
+
+        .scanning-active .laser-line {
+            opacity: 1;
+            animation: moveLaser 1.6s ease-in-out infinite alternate;
+        }
+
+        @keyframes moveLaser {
+            0% { top: 8%; }
+            100% { top: 90%; }
+        }
+
+        /* Prawa kolumna: Sterowanie i Terminal */
+        .control-panel {
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+
+        .sys-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+
+        .sys-badge {
+            font-family: monospace;
+            font-size: 0.78rem;
+            color: var(--neon-blue);
+            background: rgba(0, 242, 254, 0.12);
+            padding: 5px 12px;
+            border-radius: 6px;
+            border: 1px solid rgba(0, 242, 254, 0.3);
+        }
+
+        .hud-title {
+            font-size: 1.6rem;
+            margin-bottom: 8px;
+            letter-spacing: -0.5px;
+        }
+
+        .hud-desc {
+            color: #94a3b8;
+            font-size: 0.92rem;
+            line-height: 1.5;
+            margin-bottom: 20px;
+        }
+
+        .terminal-box {
+            background: #04070e;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            padding: 14px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.8rem;
+            height: 135px;
+            overflow-y: auto;
+            color: #38bdf8;
+            margin-bottom: 18px;
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        .t-warn { color: #fbbf24; }
+        .t-crit { color: var(--neon-red); font-weight: bold; }
+
+        .hold-btn-wrapper {
+            text-align: center;
+        }
+
+        .biometric-btn {
+            width: 100%;
+            padding: 18px;
+            border-radius: 14px;
+            background: linear-gradient(135deg, rgba(0, 242, 254, 0.15), rgba(56, 189, 248, 0.05));
+            border: 2px solid var(--neon-blue);
+            color: #fff;
+            font-size: 1.05rem;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+            cursor: pointer;
+            position: relative;
+            overflow: hidden;
+            transition: all 0.2s;
+            touch-action: manipulation;
+        }
+
+        .biometric-btn.pressing {
+            transform: scale(0.98);
+            box-shadow: 0 0 30px rgba(0, 242, 254, 0.5);
+            background: rgba(0, 242, 254, 0.25);
+        }
+
+        .btn-fill {
+            position: absolute;
+            top: 0;
+            left: 0;
+            height: 100%;
+            width: 0%;
+            background: linear-gradient(90deg, rgba(0, 242, 254, 0.4), rgba(255, 42, 84, 0.6));
+            z-index: 0;
+            transition: width 0.08s linear;
+        }
+
+        .btn-label {
+            position: relative;
+            z-index: 1;
+        }
+
+        /* ================= MODAL ALARMU ================= */
+        #crashOverlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(15, 2, 5, 0.92);
+            backdrop-filter: blur(12px);
+            z-index: 10;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .crash-card {
+            background: #1a070b;
+            border: 2px solid var(--neon-red);
+            box-shadow: 0 0 80px rgba(255, 42, 84, 0.5);
+            max-width: 540px;
+            width: 100%;
+            padding: 36px 28px;
+            border-radius: 24px;
+            text-align: center;
+            animation: glitchShake 0.5s ease;
+        }
+
+        @keyframes glitchShake {
+            0%, 100% { transform: translate(0, 0); }
+            20% { transform: translate(-8px, 4px); }
+            40% { transform: translate(8px, -4px); }
+            60% { transform: translate(-6px, -2px); }
+            80% { transform: translate(6px, 2px); }
+        }
+
+        .crash-title {
+            color: var(--neon-red);
+            font-size: 2rem;
+            font-weight: 800;
+            margin: 12px 0;
+            letter-spacing: 1px;
+        }
+
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+            margin: 20px 0;
+        }
+
+        .metric-pill {
+            background: rgba(255, 42, 84, 0.12);
+            border: 1px solid rgba(255, 42, 84, 0.35);
+            padding: 12px 8px;
+            border-radius: 12px;
+        }
+
+        .metric-pill span {
+            display: block;
+            font-size: 0.75rem;
+            color: #fda4af;
+        }
+
+        .metric-pill strong {
+            font-size: 1.15rem;
+            color: #fff;
+        }
+
+        .deploy-btn {
+            margin-top: 16px;
+            width: 100%;
+            padding: 18px;
+            border: none;
+            border-radius: 14px;
+            background: linear-gradient(135deg, #d4af37, #aa7c11);
+            color: #fff;
+            font-size: 1.1rem;
+            font-weight: 800;
+            cursor: pointer;
+            box-shadow: 0 10px 30px rgba(212, 175, 55, 0.4);
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .deploy-btn:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 15px 40px rgba(212, 175, 55, 0.6);
+        }
+
+        /* ================= ETAP 2: STRONA URODZINOWA ================= */
+        body.luxury-mode {
+            background-color: var(--beige-bg);
+            color: var(--text-dark);
+        }
+
+        #birthdayWebsite {
+            position: relative;
+            z-index: 2;
+        }
+
+        .section {
+            max-width: 1040px;
+            margin: 0 auto;
+            padding: 80px 24px;
+        }
+
+        /* Sekcja Hero */
+        .hero-section {
+            min-height: 92vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+        }
+
+        .edition-pill {
+            background: var(--beige-light);
+            border: 1px solid var(--beige-border);
+            color: var(--gold-accent);
+            padding: 8px 20px;
+            border-radius: 999px;
+            font-weight: 700;
+            font-size: 0.85rem;
+            letter-spacing: 1.5px;
+            text-transform: uppercase;
+            margin-bottom: 24px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.03);
+        }
+
+        .hero-title {
+            font-size: clamp(2.4rem, 6vw, 4.5rem);
+            line-height: 1.1;
+            margin-bottom: 20px;
+            color: var(--text-dark);
+            letter-spacing: -1.5px;
+        }
+
+        .hero-subtitle {
+            font-size: clamp(1.05rem, 2.5vw, 1.35rem);
+            color: var(--text-muted);
+            max-width: 640px;
+            line-height: 1.6;
+            margin-bottom: 44px;
+        }
+
+        .stats-bar {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 20px;
+            width: 100%;
+            max-width: 820px;
+            margin-bottom: 50px;
+        }
+
+        .stat-card {
+            background: var(--beige-light);
+            border: 1px solid var(--beige-border);
+            padding: 28px 20px;
+            border-radius: 22px;
+            box-shadow: 0 12px 30px rgba(70, 50, 35, 0.05);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .stat-num {
+            font-size: 2.2rem;
+            font-weight: 850;
+            color: var(--gold-accent);
+            font-variant-numeric: tabular-nums;
+        }
+
+        .scroll-hint {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            text-decoration: none;
+            color: var(--text-dark);
+            background: var(--beige-light);
+            border: 1px solid var(--beige-border);
+            padding: 14px 28px;
+            border-radius: 999px;
+            font-weight: 600;
+            box-shadow: 0 8px 20px rgba(0,0,0,0.05);
+            transition: transform 0.2s;
+        }
+
+        .scroll-hint:hover {
+            transform: translateY(4px);
+        }
+
+        /* Sekcja Prezentacji Hardware'u */
+        .section-header {
+            text-align: center;
+            margin-bottom: 50px;
+        }
+
+        .section-header h2 {
+            font-size: clamp(1.8rem, 4vw, 2.8rem);
+            margin-bottom: 12px;
+        }
+
+        .section-header p {
+            color: var(--text-muted);
+            font-size: 1.05rem;
+        }
+
+        .hardware-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 30px;
+        }
+
+        .hw-card {
+            background: var(--beige-light);
+            border: 1px solid var(--beige-border);
+            border-radius: 28px;
+            padding: 36px 30px;
+            box-shadow: 0 20px 45px rgba(60, 45, 30, 0.06);
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            transition: transform 0.1s ease, box-shadow 0.3s ease, border-color 0.3s ease;
+            position: relative;
+            transform-style: preserve-3d;
+            overflow: hidden;
+            min-height: 280px;
+        }
+
+        .hw-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: radial-gradient(circle at var(--mouse-x, 50%) var(--mouse-y, 50%), rgba(200, 155, 87, 0.09) 0%, transparent 60%);
+            pointer-events: none;
+            z-index: 1;
+        }
+
+        .hw-tag {
+            display: inline-block;
+            font-size: 0.78rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--gold-accent);
+            font-weight: 700;
+            margin-bottom: 10px;
+        }
+
+        .hw-title {
+            font-size: 1.65rem;
+            margin-bottom: 14px;
+            transform: translateZ(20px);
+        }
+
+        .hw-desc {
+            color: var(--text-muted);
+            line-height: 1.6;
+            margin-bottom: 24px;
+            transform: translateZ(15px);
+        }
+
+        /* Sekcja 3: Konfigurator */
+        .spa-configurator {
+            background: var(--beige-light);
+            border: 1px solid var(--beige-border);
+            border-radius: 32px;
+            padding: 44px 32px;
+            max-width: 720px;
+            margin: 0 auto;
+            box-shadow: 0 20px 50px rgba(60, 45, 30, 0.07);
+        }
+
+        .option-group {
+            margin-bottom: 26px;
+        }
+
+        .option-group label {
+            display: block;
+            font-weight: 700;
+            margin-bottom: 12px;
+            font-size: 1rem;
+        }
+
+        .pill-selector {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .choice-pill {
+            background: var(--beige-bg);
+            border: 1px solid var(--beige-border);
+            color: var(--text-dark);
+            padding: 12px 18px;
+            border-radius: 14px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 0.92rem;
+            transition: all 0.2s;
+        }
+
+        .choice-pill.selected {
+            background: var(--text-dark);
+            color: var(--beige-light);
+            border-color: var(--text-dark);
+        }
+
+        /* Regulamin Checkbox */
+        .terms-wrapper {
+            margin: 24px 0;
+            text-align: left;
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            font-size: 0.88rem;
+            cursor: pointer;
+        }
+
+        .terms-wrapper input {
+            margin-top: 3px;
+            accent-color: var(--gold-accent);
+            cursor: pointer;
+        }
+
+        .terms-link {
+            color: var(--gold-accent);
+            text-decoration: underline;
+            font-weight: 600;
+        }
+
+        /* Modal Regulaminu */
+        .modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.5);
+            backdrop-filter: blur(5px);
+            z-index: 20;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .terms-modal {
+            background: var(--beige-light);
+            border: 1px solid var(--beige-border);
+            max-width: 480px;
+            width: 100%;
+            padding: 32px 24px;
+            border-radius: 24px;
+            box-shadow: 0 25px 60px rgba(0,0,0,0.15);
+            color: var(--text-dark);
+            text-align: left;
+        }
+
+        .terms-modal h3 {
+            font-size: 1.3rem;
+            margin-bottom: 16px;
+            color: var(--gold-accent);
+        }
+
+        .terms-list {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            font-size: 0.88rem;
+            line-height: 1.5;
+            margin-bottom: 24px;
+        }
+
+        .close-terms-btn {
+            width: 100%;
+            padding: 12px;
+            border-radius: 12px;
+            border: none;
+            background: var(--text-dark);
+            color: var(--beige-light);
+            font-weight: 700;
+            cursor: pointer;
+        }
+
+        .order-btn {
+            width: 100%;
+            padding: 18px;
+            border-radius: 16px;
+            border: none;
+            background: var(--gold-accent);
+            color: #fff;
+            font-size: 1.05rem;
+            font-weight: 700;
+            cursor: pointer;
+            transition: opacity 0.2s, transform 0.2s;
+        }
+
+        .order-btn:hover {
+            opacity: 0.92;
+            transform: translateY(-2px);
+        }
+
+        .order-btn:disabled {
+            background: #d4c3b3;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .ticket-output {
+            margin-top: 24px;
+            padding: 22px;
+            border-radius: 18px;
+            background: var(--beige-bg);
+            border: 2px dashed var(--gold-accent);
+            text-align: center;
+            line-height: 1.6;
+        }
+
+        .hidden {
+            display: none !important;
+        }
+    </style>
+</head>
+<body>
+
+    <canvas id="bgCanvas"></canvas>
+
+    <!-- ================= ETAP 1: SKANER DIAGNOSTYCZNY ================= -->
+    <main id="scannerStage">
+        <div class="hud-box" id="hudBox">
+            
+            <!-- Wizualny skaner sylwetki -->
+            <div class="body-scan-panel" id="scanPanel">
+                <div class="grid-overlay"></div>
+                <div class="laser-line"></div>
+                
+                <svg class="silhouette-svg" viewBox="0 0 120 240">
+                    <!-- Głowa -->
+                    <circle cx="60" cy="26" r="16" />
+                    <!-- Szyja -->
+                    <line x1="54" y1="42" x2="54" y2="52" stroke-linecap="round" />
+                    <line x1="66" y1="42" x2="66" y2="52" stroke-linecap="round" />
+                    <!-- Tułów i ręce -->
+                    <path d="M 32 56 Q 60 48 88 56 L 98 115 L 84 118 L 78 72 L 76 130 L 44 130 L 42 72 L 36 118 L 22 115 Z" stroke-linejoin="round" />
+                    <!-- Nogi -->
+                    <path d="M 44 130 L 38 220 L 52 220 L 60 155 L 68 220 L 82 220 L 76 130 Z" stroke-linejoin="round" />
+
+                    <!-- Punkty zmęczenia (Hotspots) -->
+                    <circle class="hotspot" id="hsNeck" cx="60" cy="52" r="7" />
+                    <circle class="hotspot" id="hsBack" cx="60" cy="88" r="8" />
+                    <circle class="hotspot" id="hsCalfL" cx="45" cy="188" r="7" />
+                    <circle class="hotspot" id="hsCalfR" cx="75" cy="188" r="7" />
+                </svg>
+            </div>
+
+            <!-- Panel kontrolny -->
+            <div class="control-panel">
+                <div>
+                    <div class="sys-header">
+                        <span class="sys-badge">URODZINY v21.0</span>
+                        <span class="sys-badge" id="statusBadge">STATUS: OCZEKIWANIE</span>
+                    </div>
+                    <h1 class="hud-title">Czas na Szybki Przegląd!</h1>
+                    <p class="hud-desc">
+                        Z okazji 21. urodzin zróbmy ekspresową analizę! Przytrzymaj przycisk poniżej, żeby zobaczyć, co tam słychać u Twoich zmęczonych mięśni.
+                    </p>
+
+                    <div class="terminal-box" id="terminalBox">
+                        <div>> System gotowy. Włącz dźwięk i przytrzymaj skaner...</div>
+                    </div>
+                </div>
+
+                <div class="hold-btn-wrapper">
+                    <button class="biometric-btn" id="holdScanBtn">
+                        <div class="btn-fill" id="btnFill"></div>
+                        <span class="btn-label" id="btnLabel">⚡ PRZYTRZYMAJ, ABY ZROBIĆ SKAN (0%)</span>
+                    </button>
+                </div>
+            </div>
+
+        </div>
+    </main>
+
+    <!-- ================= MODAL KRYTYCZNEGO ZMĘCZENIA ================= -->
+    <div id="crashOverlay" class="hidden">
+        <div class="crash-card">
+            <div style="font-size: 3.5rem;">🚨</div>
+            <div class="crash-title">WYKRYTO SPIĘTE MIĘŚNIE!</div>
+            <p style="color: #fecdd3; line-height: 1.5;">
+                Oho! Analiza wykazała sporo zmęczenia. Dalsze bieganie i codzienne wyzwania bez porządnego odpoczynku grożą całkowitym brakiem energii! Czas na ratunek.
+            </p>
+
+            <div class="metrics-grid">
+                <div class="metric-pill">
+                    <span>Kark i barki</span>
+                    <strong>MOCNO SPIĘTE</strong>
+                </div>
+                <div class="metric-pill">
+                    <span>Nogi po bieganiu</span>
+                    <strong>MOCNO ZMĘCZONE</strong>
+                </div>
+                <div class="metric-pill">
+                    <span>Wiek</span>
+                    <strong>21.0 LAT</strong>
+                </div>
+            </div>
+
+            <button class="deploy-btn" id="unlockGiftBtn">
+                ✨ ODBIERZ SWÓJ PREZENT URODZINOWY!
+            </button>
+        </div>
+    </div>
+
+    <!-- ================= ETAP 2: PEŁNA STRONA URODZINOWA ================= -->
+    <div id="birthdayWebsite" class="hidden">
+        
+        <!-- SEKCJA 1: HERO -->
+        <section class="section hero-section">
+            <div class="edition-pill">Oficjalna Premiera Urodzinowa • Edycja 21.0</div>
+            <h1 class="hero-title">Wszystkiego najlepszego z okazji 21. urodzin! 🥂</h1>
+            <p class="hero-subtitle">
+                Twoja systemowa aktualizacja przebiegła pomyślnie. Od teraz za regenerację Twoich pleców, karku i nóg odpowiada Twój własny, urodzinowy zestaw SPA!
+            </p>
+
+            <!-- LICZNIK BEZ DODATKOWYCH OPISÓW -->
+            <div class="stats-bar">
+                <div class="stat-card" style="grid-column: span 2;">
+                    <div class="stat-num" id="uptimeCounter">0 lat : 0 dni : 0 godz : 0 min : 0 sek</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-num">2w1</div>
+                </div>
+            </div>
+
+            <a href="#hardwareSection" class="scroll-hint">
+                Zobacz swój zestaw ↓
+            </a>
+        </section>
+
+        <!-- SEKCJA 2: PREZENTACJA URZĄDZEŃ (BEZ PARAMETRÓW TECHNICZNYCH I DEMO) -->
+        <section class="section" id="hardwareSection">
+            <div class="section-header">
+                <h2>Twój Nowy Zestaw Naprawczy</h2>
+                <p>Oto dwa prezenty od Beurera, które od teraz będą dbać o Twój relaks i regenerację.</p>
+            </div>
+
+            <div class="hardware-grid">
+                <!-- Karta 1: Beurer MG 153 -->
+                <div class="hw-card" id="cardMG153">
+                    <div>
+                        <span class="hw-tag">Dla karku i pleców</span>
+                        <h3 class="hw-title">Masażer Beurer MG 153</h3>
+                        <p class="hw-desc">
+                            Ciepły, głęboki masaż, który idealnie naśladuje dłonie masażysty. Pomoże Ci się odprężyć po całym dniu, kiedy wypoczywasz na kanapie i oglądasz ulubiony serial. Sama decydujesz, jak mocno ma masować, pociągając za wygodne uchwyty.
+                        </p>
+                    </div>
+                </div>
+
+                <!-- Karta 2: Beurer MG 99 -->
+                <div class="hw-card" id="cardMG99">
+                    <div>
+                        <span class="hw-tag">Dla zmęczonych nóg po treningu</span>
+                        <h3 class="hw-title">Pistolet Beurer MG 99</h3>
+                        <p class="hw-desc">
+                            Lekki i superporęczny masażer, który będzie idealny po każdym Twoim bieganiu i treningu. Błyskawicznie rozluźnia i rozbija spięte łydki oraz uda, dzięki czemu Twoje nogi szybko odzyskają siły na kolejny dystans.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- SEKCJA 3: KONFIGURATOR -->
+        <section class="section">
+            <div class="section-header">
+                <h2>Zarezerwuj Pierwszą Sesję Domowego SPA</h2>
+                <p>Skonfiguruj swój pakiet – ja zajmę się resztą.</p>
+            </div>
+
+            <div class="spa-configurator">
+                <div class="option-group">
+                    <label>1. Co dzisiaj masujemy w pierwszej kolejności?</label>
+                    <div class="pill-selector" data-group="area">
+                        <button class="choice-pill selected">Spięty kark i ramiona (MG 153)</button>
+                        <button class="choice-pill">Zmęczone nogi po bieganiu (MG 99)</button>
+                        <button class="choice-pill">Pełny pakiet: Kark + Nogi</button>
+                    </div>
+                </div>
+
+                <div class="option-group">
+                    <label>2. Wybierz dodatek do wieczornej sesji:</label>
+                    <div class="pill-selector" data-group="extra">
+                        <button class="choice-pill selected">Ulubiony serial i kocyk</button>
+                        <button class="choice-pill">Kieliszek dobrego wina lub prosecco</button>
+                        <button class="choice-pill">Pyszne jedzenie na mój koszt</button>
+                    </div>
+                </div>
+
+                <!-- Checkbox z Regulaminem -->
+                <div class="terms-wrapper" id="termsCheckContainer">
+                    <input type="checkbox" id="termsAgree">
+                    <span>Zgadzam się z prostymi zasadami i <span class="terms-link" id="viewTermsLink">Regulaminem Domowego SPA v21.0</span></span>
+                </div>
+
+                <button class="order-btn" id="generateTicketBtn" disabled>
+                    💌 Wygeneruj Zlecenie Urodzinowe
+                </button>
+
+                <div class="ticket-output hidden" id="ticketOutput"></div>
+            </div>
+        </section>
+
+    </div>
+
+    <!-- MODAL REGULAMINU -->
+    <div id="termsModal" class="modal-overlay hidden">
+        <div class="terms-modal">
+            <h3>Regulamin Domowego SPA v21.0</h3>
+            <div class="terms-list">
+                <p><strong>1. Moje obowiązki</strong><br>Jako Twój chłopak zobowiązuję się do przygotowania sprzętu, przyniesienia czegoś dobrego do picia i pomagania przy masażu na każde Twoje zawołanie.</p>
+                <p><strong>2. Twoje niezbywalne prawa</strong><br>Ten prezent pod żadnym pozorem nie zwalnia mnie z tradycyjnego masowania i drapania po plecach, kiedy tylko o to poprosisz.</p>
+                <p><strong>3. Sprawy sportowe</strong><br>Po każdym Twoim bieganiu i treningu zmęczone nogi muszą zostać porządnie rozmasowane pistoletem – nie ma wymówek!</p>
+                <p><strong>4. Ważność i reklamacje</strong><br>Ten kontrakt jest ważny bezterminowo, a zażalenia nie są przyjmowane. Podpisano: Twoja osobista obsługa SPA! ❤️</p>
+            </div>
+            <button class="close-terms-btn" id="closeTermsBtn">Akceptuję w 100%</button>
+        </div>
+    </div>
+
+    <!-- Konfetti i biblioteka canvas -->
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+    <script>
+        /* ================= 1. SYNTEZATOR AUDIO (WEB AUDIO API) ================= */
+        let audioCtx = null;
+        let scanOsc = null;
+        let scanGain = null;
+
+        function initAudio() {
+            if (!audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            if (audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+        }
+
+        function startScanSound() {
+            initAudio();
+            stopScanSound();
+            scanOsc = audioCtx.createOscillator();
+            scanGain = audioCtx.createGain();
+            scanOsc.type = 'sine';
+            scanOsc.frequency.setValueAtTime(140, audioCtx.currentTime);
+            scanGain.gain.setValueAtTime(0.06, audioCtx.currentTime);
+            scanOsc.connect(scanGain);
+            scanGain.connect(audioCtx.destination);
+            scanOsc.start();
+        }
+
+        function updateScanPitch(progressVal) {
+            if (scanOsc && audioCtx) {
+                scanOsc.frequency.setValueAtTime(140 + progressVal * 4.5, audioCtx.currentTime);
+            }
+        }
+
+        function stopScanSound() {
+            if (scanOsc) {
+                try { scanOsc.stop(); } catch(e) {}
+                scanOsc.disconnect();
+                scanOsc = null;
+            }
+        }
+
+        function playAlarmSound() {
+            initAudio();
+            stopScanSound();
+            const now = audioCtx.currentTime;
+            for (let i = 0; i < 3; i++) {
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(440, now + i * 0.25);
+                osc.frequency.setValueAtTime(290, now + i * 0.25 + 0.12);
+                gain.gain.setValueAtTime(0.08, now + i * 0.25);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.25 + 0.24);
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.start(now + i * 0.25);
+                osc.stop(now + i * 0.25 + 0.24);
+            }
+        }
+
+        function playSuccessChord() {
+            initAudio();
+            const freqs = [261.63, 329.63, 392.00, 523.25];
+            const now = audioCtx.currentTime;
+            freqs.forEach((f, idx) => {
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(f, now + idx * 0.08);
+                gain.gain.setValueAtTime(0.1, now + idx * 0.08);
+                gain.gain.exponentialRampToValueAtTime(0.0001, now + 1.8);
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.start(now + idx * 0.08);
+                osc.stop(now + 1.9);
+            });
+        }
+
+        /* ================= 2. TŁO CZĄSTECZKOWE NA CANVASIE ================= */
+        const canvas = document.getElementById('bgCanvas');
+        const ctx = canvas.getContext('2d');
+        let particles = [];
+        let particleMode = 'cyber'; // 'cyber' lub 'champagne'
+
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        function createParticles(count) {
+            particles = [];
+            for (let i = 0; i < count; i++) {
+                particles.push({
+                    x: Math.random() * canvas.width,
+                    y: Math.random() * canvas.height,
+                    r: Math.random() * 3 + 1.2,
+                    vx: (Math.random() - 0.5) * 0.8,
+                    vy: -Math.random() * 1.2 - 0.4,
+                    alpha: Math.random() * 0.6 + 0.2
+                });
+            }
+        }
+        createParticles(65);
+
+        function animateCanvas() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            particles.forEach(p => {
+                p.x += p.vx;
+                p.y += p.vy;
+                if (p.y < 0) p.y = canvas.height;
+                if (p.x < 0) p.x = canvas.width;
+                if (p.x > canvas.width) p.x = 0;
+
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+                if (particleMode === 'cyber') {
+                    ctx.fillStyle = `rgba(0, 242, 254, ${p.alpha})`;
+                } else {
+                    ctx.fillStyle = `rgba(200, 155, 87, ${p.alpha})`;
+                }
+                ctx.fill();
+            });
+            requestAnimationFrame(animateCanvas);
+        }
+        animateCanvas();
+
+        /* ================= 3. LICZNIK CZASU PRACY (UPTIME COUNTER) ================= */
+        const birthDate = new Date("2005-11-03T10:00:00");
+        const uptimeCounter = document.getElementById('uptimeCounter');
+
+        function updateSystemUptime() {
+            const now = new Date();
+            let years = now.getFullYear() - birthDate.getFullYear();
+            
+            // Określenie rocznicy
+            let nextAnniversary = new Date(now.getFullYear(), birthDate.getMonth(), birthDate.getDate(), 10, 0, 0);
+            if (now < nextAnniversary) {
+                years--;
+            }
+
+            // Ostatnia odbyta rocznica (punkt startowy do now)
+            let lastBday = new Date(birthDate.getFullYear() + years, birthDate.getMonth(), birthDate.getDate(), 10, 0, 0);
+            let diffMs = now - lastBday;
+
+            let days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+            diffMs -= days * 1000 * 60 * 60 * 24;
+
+            let hours = Math.floor(diffMs / (1000 * 60 * 60));
+            diffMs -= hours * 1000 * 60 * 60;
+
+            let minutes = Math.floor(diffMs / (1000 * 60));
+            diffMs -= minutes * 1000 * 60;
+
+            let seconds = Math.floor(diffMs / 1000);
+
+            // Wyświetlenie czasu z zachowaniem stabilnej szerokości
+            uptimeCounter.textContent = `${years} lat : ${days} dni : ${hours} godz : ${minutes} min : ${seconds} sek`;
+        }
+
+        /* ================= 4. EFEKT 3D TILT NA KARTACH ================= */
+        function initCardTilt() {
+            const cards = document.querySelectorAll('.hw-card');
+            cards.forEach(card => {
+                card.addEventListener('mousemove', e => {
+                    const rect = card.getBoundingClientRect();
+                    const x = e.clientX - rect.left;
+                    const y = e.clientY - rect.top;
+
+                    // Rejestracja pozycji myszki dla błysku (CSS Variable)
+                    card.style.setProperty('--mouse-x', `${(x / rect.width) * 100}%`);
+                    card.style.setProperty('--mouse-y', `${(y / rect.height) * 100}%`);
+
+                    // Kąty wychylenia
+                    const xc = rect.width / 2;
+                    const yc = rect.height / 2;
+                    const angleX = (yc - y) / 10; 
+                    const angleY = (x - xc) / 12;
+
+                    card.style.transform = `perspective(1000px) rotateX(${angleX}deg) rotateY(${angleY}deg) scale3d(1.02, 1.02, 1.02)`;
+                    card.style.boxShadow = `0 35px 65px rgba(60, 45, 30, 0.12)`;
+                });
+
+                card.addEventListener('mouseleave', () => {
+                    card.style.transform = `perspective(1000px) rotateX(0deg) rotateY(0deg) scale3d(1, 1, 1)`;
+                    card.style.boxShadow = `0 20px 45px rgba(60, 45, 30, 0.06)`;
+                });
+            });
+        }
+
+        /* ================= 5. LOGIKA SKANOWANIA ================= */
+        const holdScanBtn = document.getElementById('holdScanBtn');
+        const btnFill = document.getElementById('btnFill');
+        const btnLabel = document.getElementById('btnLabel');
+        const scanPanel = document.getElementById('scanPanel');
+        const terminalBox = document.getElementById('terminalBox');
+        const statusBadge = document.getElementById('statusBadge');
+
+        let scanProgress = 0;
+        let scanTimer = null;
+        let isHolding = false;
+        let shownMessages = new Set();
+
+        const scanEvents = [
+            { at: 10, msg: "> Zaczynamy urodzinowy przegląd (poziom 21)...", cls: "" },
+            { at: 28, msg: "> Sprawdzam kark i barki... Oj, trochę spięte!", cls: "t-warn", hotspot: "hsNeck" },
+            { at: 50, msg: "> Skanuję plecy... Tutaj przyda się porządne rozluźnienie.", cls: "t-warn", hotspot: "hsBack" },
+            { at: 75, msg: "> Przechodzę do nóg... Łydki po bieganiu też proszą o regenerację!", cls: "t-crit", hotspot: "hsCalfL" },
+            { at: 85, msg: "> Analiza gotowa. Wszystko jasne!", cls: "t-crit", hotspot: "hsCalfR" }
+        ];
+
+        function appendTerminal(text, cls) {
+            const div = document.createElement('div');
+            if (cls) div.className = cls;
+            div.textContent = text;
+            terminalBox.appendChild(div);
+            terminalBox.scrollTop = terminalBox.scrollHeight;
+        }
+
+        function startHold(e) {
+            e.preventDefault();
+            if (scanProgress >= 100 || isHolding) return;
+            isHolding = true;
+            holdScanBtn.classList.add('pressing');
+            scanPanel.classList.add('scanning-active');
+            statusBadge.textContent = "STATUS: SKANOWANIE...";
+            startScanSound();
+
+            scanTimer = setInterval(() => {
+                scanProgress += 1;
+                btnFill.style.width = `${scanProgress}%`;
+                btnLabel.textContent = `⚡ SKANOWANIE UKŁADU... (${scanProgress}%)`;
+                updateScanPitch(scanProgress);
+
+                if (scanProgress % 12 === 0 && navigator.vibrate) {
+                    navigator.vibrate(25);
+                }
+
+                scanEvents.forEach(ev => {
+                    if (scanProgress >= ev.at && !shownMessages.has(ev.at)) {
+                        shownMessages.add(ev.at);
+                        appendTerminal(ev.msg, ev.cls);
+                        if (ev.hotspot) {
+                            document.getElementById(ev.hotspot).classList.add('active');
+                        }
+                    }
+                });
+
+                if (scanProgress >= 100) {
+                    clearInterval(scanTimer);
+                    triggerSystemCrash();
+                }
+            }, 50);
+        }
+
+        function stopHold(e) {
+            e.preventDefault();
+            if (!isHolding || scanProgress >= 100) return;
+            isHolding = false;
+            clearInterval(scanTimer);
+            stopScanSound();
+            holdScanBtn.classList.remove('pressing');
+            scanPanel.classList.remove('scanning-active');
+            statusBadge.textContent = "STATUS: PRZERWANO";
+            btnLabel.textContent = `⚡ PRZYTRZYMAJ DO KOŃCA! (${scanProgress}%)`;
+            appendTerminal("> [PRZERWANO] Nie puszczaj przycisku przed ukończeniem skanu!", "t-warn");
+        }
+
+        function triggerSystemCrash() {
+            playAlarmSound();
+            if (navigator.vibrate) navigator.vibrate([250, 100, 250]);
+            document.getElementById('crashOverlay').classList.remove('hidden');
+        }
+
+        holdScanBtn.addEventListener('mousedown', startHold);
+        window.addEventListener('mouseup', stopHold);
+        holdScanBtn.addEventListener('touchstart', startHold, { passive: false });
+        window.addEventListener('touchend', stopHold, { passive: false });
+        holdScanBtn.addEventListener('contextmenu', e => e.preventDefault());
+
+        /* ================= 6. PRZEJŚCIE DO PEŁNEJ STRONY URODZINOWEJ ================= */
+        document.getElementById('unlockGiftBtn').addEventListener('click', () => {
+            playSuccessChord();
+            document.getElementById('crashOverlay').classList.add('hidden');
+            document.getElementById('scannerStage').classList.add('hidden');
+
+            document.body.classList.add('luxury-mode');
+            particleMode = 'champagne';
+            createParticles(90);
+
+            const bdaySite = document.getElementById('birthdayWebsite');
+            bdaySite.classList.remove('hidden');
+
+            // Aktywacja licznika uptime i 3D Tiltu
+            setInterval(updateSystemUptime, 1000);
+            updateSystemUptime();
+            initCardTilt();
+
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        });
+
+        /* ================= 7. KONFIGURATOR I MODAL REGULAMINU ================= */
+        const viewTermsLink = document.getElementById('viewTermsLink');
+        const termsModal = document.getElementById('termsModal');
+        const closeTermsBtn = document.getElementById('closeTermsBtn');
+        const termsAgree = document.getElementById('termsAgree');
+        const generateTicketBtn = document.getElementById('generateTicketBtn');
+
+        viewTermsLink.addEventListener('click', (e) => {
+            e.stopPropagation();
+            termsModal.classList.remove('hidden');
+        });
+
+        closeTermsBtn.addEventListener('click', () => {
+            termsModal.classList.add('hidden');
+            termsAgree.checked = true;
+            generateTicketBtn.disabled = false;
+        });
+
+        termsAgree.addEventListener('change', () => {
+            generateTicketBtn.disabled = !termsAgree.checked;
+        });
+
+        document.querySelectorAll('.pill-selector').forEach(group => {
+            group.addEventListener('click', e => {
+                if (e.target.classList.contains('choice-pill')) {
+                    group.querySelectorAll('.choice-pill').forEach(btn => btn.classList.remove('selected'));
+                    e.target.classList.add('selected');
+                }
+            });
+        });
+
+        document.getElementById('generateTicketBtn').addEventListener('click', () => {
+            playSuccessChord();
+            const area = document.querySelector('[data-group="area"] .selected').textContent;
+            const extra = document.querySelector('[data-group="extra"] .selected').textContent;
+            const output = document.getElementById('ticketOutput');
+
+            output.innerHTML = `
+                <strong>✅ ZLECENIE PRZYJĘTE DO REALIZACJI!</strong><br>
+                Wybrany pakiet: <em>${area}</em><br>
+                Dodatek do masażu: <em>${extra}</em><br><br>
+                <span style="color: #7a685d; font-size: 0.9rem;">Pokaż mi ten ekran, żeby odebrać masażery i zacząć relaks. Sto lat! ❤️</span>
+            `;
+            output.classList.remove('hidden');
+
+            if (typeof confetti === 'function') {
+                confetti({
+                    particleCount: 150,
+                    spread: 80,
+                    origin: { y: 0.8 }
+                });
+            }
+        });
+    </script>
+</body>
+</html>
